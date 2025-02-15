@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -109,14 +110,19 @@ func startMPV(files []string, socketPath string) error {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <files...>\n", os.Args[0])
+	// 定义命令行参数
+	var ipcServer string
+	flag.StringVar(&ipcServer, "ipc-server", "", "Specify the IPC server socket path")
+	flag.Parse()
+
+	if len(flag.Args()) < 1 {
+		fmt.Fprintf(os.Stderr, "Usage: %s [--ipc--server <path>] <files...>\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	// 处理文件路径
 	var files []string
-	for _, f := range os.Args[1:] {
+	for _, f := range flag.Args() {
 		if isURL(f) {
 			files = append(files, f)
 		} else {
@@ -129,10 +135,16 @@ func main() {
 		}
 	}
 
-	socketPath, err := getSocketPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	var socketPath string
+	var err error
+	if ipcServer != "" {
+		socketPath = ipcServer
+	} else {
+		socketPath, err = getSocketPath()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if runtime.GOOS == "windows" {
