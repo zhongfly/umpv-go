@@ -52,13 +52,13 @@ func getSocketPath() (string, error) {
 }
 
 // sendFilesToMPV 发送文件列表到MPV
-func sendFilesToMPV(conn interface{}, files []string) error {
+func sendFilesToMPV(conn interface{}, files []string, loadFileFlag string) error {
 	for _, f := range files {
 		// 转义特殊字符
 		f = strings.ReplaceAll(f, "\\", "\\\\")
 		f = strings.ReplaceAll(f, "\"", "\\\"")
 		f = strings.ReplaceAll(f, "\n", "\\n")
-		cmd := fmt.Sprintf("raw loadfile \"%s\" append-play\n", f)
+		cmd := fmt.Sprintf("raw loadfile \"%s\" %s\n", f, loadFileFlag)
 
 		switch c := conn.(type) {
 		case net.Conn:
@@ -97,7 +97,6 @@ func startMPV(files []string, socketPath string) error {
 	}
 
 	args := []string{
-		"--profile=builtin-pseudo-gui",
 		"--input-ipc-server=" + socketPath,
 		"--",
 	}
@@ -113,6 +112,9 @@ func main() {
 	// 定义命令行参数
 	var ipcServer string
 	flag.StringVar(&ipcServer, "ipc-server", "", "Specify the IPC server socket path")
+	var loadFileFlag string
+	flag.StringVar(&loadFileFlag, "loadfile-flag", "append-play", "Specify the loadfile flag (replace, append, append-play)")
+
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -161,7 +163,7 @@ func main() {
 		}
 		defer file.Close()
 
-		err = sendFilesToMPV(file, files)
+		err = sendFilesToMPV(file, files, loadFileFlag)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
 			os.Exit(1)
@@ -180,7 +182,7 @@ func main() {
 		}
 		defer conn.Close()
 
-		err = sendFilesToMPV(conn, files)
+		err = sendFilesToMPV(conn, files, loadFileFlag)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
 			os.Exit(1)
