@@ -115,7 +115,15 @@ func main() {
 	var loadFileFlag string
 	flag.StringVar(&loadFileFlag, "loadfile-flag", "append-play", "Specify the loadfile flag (replace, append, append-play)")
 
+	// 添加对 --help 参数的处理
+	help := flag.Bool("help", false, "Show help message")
+
 	flag.Parse()
+
+	if *help {
+		flag.Usage()
+		return
+	}
 
 	if len(flag.Args()) < 1 {
 		fmt.Fprintf(os.Stderr, "Usage: %s [--ipc--server <path>] <files...>\n", os.Args[0])
