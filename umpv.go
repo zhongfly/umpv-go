@@ -103,7 +103,7 @@ func main() {
 	}
 
 	if len(flag.Args()) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--ipc--server <path>] <files...>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [--ipc-server <path>] [--loadfile-flag <flag>] <files...>\n", os.Args[0])
 		os.Exit(1)
 	}
 
