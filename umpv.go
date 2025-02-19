@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -29,26 +28,7 @@ func isURL(filename string) bool {
 
 // getSocketPath 返回socket或命名管道的路径
 func getSocketPath() (string, error) {
-	if runtime.GOOS == "windows" {
-		return `\\.\pipe\umpv`, nil
-	}
-
-	baseDir := os.Getenv("UMPV_SOCKET_DIR")
-	if baseDir == "" {
-		baseDir = os.Getenv("XDG_RUNTIME_DIR")
-	}
-	if baseDir == "" {
-		baseDir = os.Getenv("HOME")
-	}
-	if baseDir == "" {
-		baseDir = os.Getenv("TMPDIR")
-	}
-
-	if baseDir == "" {
-		return "", fmt.Errorf("could not determine socket directory: ensure UMPV_SOCKET_DIR, XDG_RUNTIME_DIR, HOME or TMPDIR is set")
-	}
-
-	return filepath.Join(baseDir, ".umpv"), nil
+	return `\\.\pipe\umpv`, nil
 }
 
 // sendFilesToMPV 发送文件列表到MPV
@@ -78,10 +58,7 @@ func sendFilesToMPV(conn interface{}, files []string, loadFileFlag string) error
 
 // startMPV 启动新的MPV进程
 func startMPV(files []string, socketPath string) error {
-	mpv := "mpv"
-	if runtime.GOOS == "windows" {
-		mpv = "mpv.exe"
-	}
+	mpv := "mpv.exe"
 
 	// 检查当前目录中是否存在mpv
 	if _, err := os.Stat(mpv); err == nil {
@@ -157,43 +134,23 @@ func main() {
 		}
 	}
 
-	if runtime.GOOS == "windows" {
-		// Windows 使用命名管道
-		file, err := os.OpenFile(socketPath, os.O_RDWR, 0)
+	// Windows 使用命名管道
+	file, err := os.OpenFile(socketPath, os.O_RDWR, 0)
+	if err != nil {
+		// 如果管道不存在，启动新的MPV实例
+		err = startMPV(files, socketPath)
 		if err != nil {
-			// 如果管道不存在，启动新的MPV实例
-			err = startMPV(files, socketPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-		defer file.Close()
-
-		err = sendFilesToMPV(file, files, loadFileFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
 			os.Exit(1)
 		}
-	} else {
-		// Unix 使用 Unix Domain Socket
-		conn, err := net.Dial("unix", socketPath)
-		if err != nil {
-			// 如果socket连接失败，启动新的MPV实例
-			err = startMPV(files, socketPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-		defer conn.Close()
-
-		err = sendFilesToMPV(conn, files, loadFileFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
-			os.Exit(1)
-		}
+		return
 	}
+	defer file.Close()
+
+	err = sendFilesToMPV(file, files, loadFileFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
+		os.Exit(1)
+	}
+
 }
