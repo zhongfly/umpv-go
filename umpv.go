@@ -1,13 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"unsafe"
+
+	"github.com/Microsoft/go-winio"
 )
 
 // isURL 检查给定的文件名是否是URL
@@ -24,36 +30,6 @@ func isURL(filename string) bool {
 		}
 	}
 	return true
-}
-
-// getSocketPath 返回socket或命名管道的路径
-func getSocketPath() (string, error) {
-	return `\\.\pipe\umpv`, nil
-}
-
-// sendFilesToMPV 发送文件列表到MPV
-func sendFilesToMPV(conn interface{}, files []string, loadFileFlag string) error {
-	for _, f := range files {
-		// 转义特殊字符
-		f = strings.ReplaceAll(f, "\\", "\\\\")
-		f = strings.ReplaceAll(f, "\"", "\\\"")
-		f = strings.ReplaceAll(f, "\n", "\\n")
-		cmd := fmt.Sprintf("raw loadfile \"%s\" %s\n", f, loadFileFlag)
-
-		switch c := conn.(type) {
-		case net.Conn:
-			_, err := c.Write([]byte(cmd))
-			if err != nil {
-				return err
-			}
-		case *os.File:
-			_, err := c.Write([]byte(cmd))
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // startMPV 启动新的MPV进程
@@ -83,6 +59,94 @@ func startMPV(files []string, socketPath string) error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Start()
+}
+
+// sendFilesToMPV 发送文件列表到MPV
+func sendFilesToMPV(conn net.Conn, files []string, loadFileFlag string) error {
+	for _, f := range files {
+		// 转义特殊字符
+		f = strings.ReplaceAll(f, "\\", "\\\\")
+		f = strings.ReplaceAll(f, "\"", "\\\"")
+		f = strings.ReplaceAll(f, "\n", "\\n")
+		cmd := fmt.Sprintf("raw loadfile \"%s\" %s\n", f, loadFileFlag)
+
+		_, err := io.WriteString(conn, cmd)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Response represents the structure of the JSON response from MPV
+type Response struct {
+	Data      int    `json:"data"`
+	RequestID int    `json:"request_id"`
+	Error     string `json:"error"`
+}
+
+// getPid 获取MPV进程的PID
+func getPid(conn net.Conn) (int, error) {
+	cmd := `{"command": ["get_property", "pid"]}` + "\n"
+	_, err := io.WriteString(conn, cmd)
+	if err != nil {
+		return 0, err
+	}
+
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	var response Response
+	err = json.Unmarshal(buf[:n], &response)
+	if err != nil {
+		return 0, err
+	}
+
+	if response.Error != "success" {
+		return 0, fmt.Errorf("error from MPV: %s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+// setForegroundWindow 将指定PID的窗口获得输入焦点
+func setForegroundWindow(pid int) error {
+	user32 := syscall.NewLazyDLL("user32.dll")
+	procSetForegroundWindow := user32.NewProc("SetForegroundWindow")
+	procShowWindow := user32.NewProc("ShowWindow")
+	procGetWindowThreadProcessId := user32.NewProc("GetWindowThreadProcessId")
+	procGetClassName := user32.NewProc("GetClassNameW")
+	enumWindows := user32.NewProc("EnumWindows")
+
+	hwnd := uintptr(0)
+	cb := func(hwndFound syscall.Handle, lparam uintptr) uintptr {
+		var processID uint32
+		procGetWindowThreadProcessId.Call(uintptr(hwndFound), uintptr(unsafe.Pointer(&processID)))
+		if processID == uint32(pid) {
+			className := make([]uint16, 256)
+			procGetClassName.Call(uintptr(hwndFound), uintptr(unsafe.Pointer(&className[0])), uintptr(len(className)))
+			if syscall.UTF16ToString(className) == "mpv" {
+				hwnd = uintptr(hwndFound)
+				return 0 // stop enumeration
+			}
+		}
+		return 1 // continue enumeration
+	}
+
+	enumWindows.Call(syscall.NewCallback(cb), 0)
+
+	if hwnd == 0 {
+		return fmt.Errorf("window not found for PID %d", pid)
+	}
+
+	const SW_RESTORE = 9
+	procShowWindow.Call(hwnd, SW_RESTORE)
+	procSetForegroundWindow.Call(hwnd)
+
+	return nil
 }
 
 func main() {
@@ -127,29 +191,40 @@ func main() {
 	if ipcServer != "" {
 		socketPath = ipcServer
 	} else {
-		socketPath, err = getSocketPath()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
+		socketPath = `\\.\pipe\umpv`
 	}
 
 	// Windows 使用命名管道
-	file, err := os.OpenFile(socketPath, os.O_RDWR, 0)
+	conn, err := winio.DialPipe(socketPath, nil)
 	if err != nil {
-		// 如果管道不存在，启动新的MPV实例
-		err = startMPV(files, socketPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
-			os.Exit(1)
+		if os.IsNotExist(err) {
+			// 如果管道不存在，启动新的MPV实例
+			err = startMPV(files, socketPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
-		return
+		fmt.Fprintf(os.Stderr, "Error connecting to pipe: %v\n", err)
+		os.Exit(1)
 	}
-	defer file.Close()
+	defer conn.Close()
 
-	err = sendFilesToMPV(file, files, loadFileFlag)
+	err = sendFilesToMPV(conn, files, loadFileFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
+		os.Exit(1)
+	}
+
+	pid, err := getPid(conn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting PID: %v\n", err)
+		os.Exit(1)
+	}
+	err = setForegroundWindow(pid)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
 		os.Exit(1)
 	}
 
