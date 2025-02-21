@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/Microsoft/go-winio"
+	"github.com/go-ini/ini"
 )
 
 // isURL 检查给定的文件名是否是URL
@@ -149,12 +150,33 @@ func setForegroundWindow(pid int) error {
 	return nil
 }
 
+// Config 结构体用于存储配置信息
+type Config struct {
+	IpcServer    string `ini:"ipc-server"`
+	LoadFileFlag string `ini:"loadfile-flag"`
+}
+
+// loadConfig 读取配置文件
+func loadConfig(configPath string) (*Config, error) {
+	cfg := new(Config)
+	err := ini.MapTo(cfg, configPath)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 func main() {
 	// 定义命令行参数
-	var ipcServer string
+	var (
+		ipcServer    string
+		loadFileFlag string
+		configPath   string
+	)
+
 	flag.StringVar(&ipcServer, "ipc-server", "", "Specify the IPC server socket path")
-	var loadFileFlag string
-	flag.StringVar(&loadFileFlag, "loadfile-flag", "append-play", "Specify the loadfile flag (replace, append, append-play)")
+	flag.StringVar(&loadFileFlag, "loadfile-flag", "", "Specify the loadfile flag (replace, append, append-play)")
+	flag.StringVar(&configPath, "config", "", "Specify the config file path")
 
 	// 添加对 --help 参数的处理
 	help := flag.Bool("help", false, "Show help message")
@@ -186,8 +208,37 @@ func main() {
 		}
 	}
 
+	// 加载配置文件
+	if configPath == "" {
+		// 如果没有指定配置文件路径，则使用默认路径
+		executablePath, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting executable path: %v\n", err)
+			os.Exit(1)
+		}
+		executableDir := filepath.Dir(executablePath)
+		configPath = filepath.Join(executableDir, "umpv.conf")
+	}
+
+	cfg, err := loadConfig(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Error loading config file: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 命令行参数覆盖配置文件
+	if ipcServer == "" && cfg != nil {
+		ipcServer = cfg.IpcServer
+	}
+	if loadFileFlag == "" {
+		if cfg != nil && cfg.LoadFileFlag != "" {
+			loadFileFlag = cfg.LoadFileFlag
+		} else {
+			loadFileFlag = "append-play"
+		}
+	}
+
 	var socketPath string
-	var err error
 	if ipcServer != "" {
 		socketPath = ipcServer
 	} else {

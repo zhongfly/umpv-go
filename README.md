@@ -19,6 +19,9 @@ Specify the loadfile flag. Possible values are:
 - `insert-next-play`: Insert the file next, and if nothing is currently playing, start playback. 
 Read [mpv manual](https://mpv.io/manual/master/#command-interface-[%3Coptions%3E]]]) for more details.
 
+### --config
+Specify the config file path. If not provided, the default path `umpv.conf` in the executable directory will be used.
+
 ### Example
 ```sh
 umpv --ipc-server=\\.\\pipe\\mpvpipe --loadfile-flag=replace video.mkv
