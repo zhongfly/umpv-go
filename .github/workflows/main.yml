@@ -28,7 +28,7 @@ jobs:
     - name: Build the application
       shell: bash
       run: |
-        go build -ldflags="-s -w" -o bin/umpv
+        GOARCH=386 go build -ldflags="-s -w -H windowsgui" -o bin/umpv
 
     - name: Compress with UPX
       run: upx --best --lzma -o umpv${{ matrix.ext }} bin/umpv
