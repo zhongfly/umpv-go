@@ -51,12 +51,17 @@ func startMPV(files []string, socketPath string) error {
 	}
 
 	args := []string{
+		"/c",
+		mpv,
 		"--input-ipc-server=" + socketPath,
+		"--force-window=yes",
+		"--idle=yes",
 		"--",
 	}
 	args = append(args, files...)
 
-	cmd := exec.Command(mpv, args...)
+	cmd := exec.Command("C:\\Windows\\system32\\cmd.exe", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Start()
@@ -186,11 +191,6 @@ func main() {
 	if *help {
 		flag.Usage()
 		return
-	}
-
-	if len(flag.Args()) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--ipc-server <path>] [--loadfile-flag <flag>] <files...>\n", os.Args[0])
-		os.Exit(1)
 	}
 
 	// 处理文件路径
