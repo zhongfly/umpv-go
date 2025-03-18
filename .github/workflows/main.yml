@@ -5,11 +5,15 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - os: windows-latest
+          - GOOS: windows
+            GOARCH: "amd64"
+            ext: ".exe"
+          - GOOS: windows
+            GOARCH: "386"
             ext: ".exe"
 
     steps:
@@ -21,14 +25,13 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Install UPX on Windows
-      if: matrix.os == 'windows-latest'
-      run: choco install upx
+    - name: Install UPX
+      run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
     - name: Build the application
       shell: bash
       run: |
-        GOARCH=386 go build -ldflags="-s -w -H windowsgui" -o bin/umpv
+        GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} go build -ldflags="-s -w -H windowsgui" -o bin/umpv
 
     - name: Compress with UPX
       run: upx --best --lzma -o umpv${{ matrix.ext }} bin/umpv
@@ -36,5 +39,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: umpv-${{ matrix.os }}
+        name: umpv-${{ matrix.GOOS }}-${{ matrix.GOARCH }}
         path: umpv${{ matrix.ext }}
