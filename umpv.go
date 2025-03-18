@@ -193,6 +193,17 @@ func main() {
 		return
 	}
 
+	// 切换工作路径为程序所在的文件夹
+	executablePath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting executable path: %v", err)
+	}
+	executableDir := filepath.Dir(executablePath)
+	err = os.Chdir(executableDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error changing directory: %v", err)
+	}
+
 	// 处理文件路径
 	var files []string
 	for _, f := range flag.Args() {
@@ -208,15 +219,8 @@ func main() {
 		}
 	}
 
-	// 加载配置文件
+	// 如果没有指定配置文件路径，则使用默认路径
 	if configPath == "" {
-		// 如果没有指定配置文件路径，则使用默认路径
-		executablePath, err := os.Executable()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting executable path: %v\n", err)
-			os.Exit(1)
-		}
-		executableDir := filepath.Dir(executablePath)
 		configPath = filepath.Join(executableDir, "umpv.conf")
 	}
 
