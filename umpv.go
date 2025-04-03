@@ -33,6 +33,15 @@ func isURL(filename string) bool {
 	return true
 }
 
+func addQuotesToStrings(inputs []string) []string {
+	var result []string
+	for _, str := range inputs {
+		str = "\"" + strings.Trim(str, "\"'") + "\""
+		result = append(result, str)
+	}
+	return result
+}
+
 // startMPV 启动新的MPV进程
 func startMPV(files []string, socketPath string) error {
 	mpv := "mpv.exe"
@@ -51,19 +60,22 @@ func startMPV(files []string, socketPath string) error {
 	}
 
 	args := []string{
-		"/c",
-		mpv,
+		"\"" + mpv + "\"",
 		"--input-ipc-server=" + socketPath,
 		"--force-window=yes",
 		"--idle=yes",
 		"--",
 	}
-	args = append(args, files...)
+	args = append(args, addQuotesToStrings(files)...)
+	command := strings.Join(args[:], " ")
 
-	cmd := exec.Command("C:\\Windows\\system32\\cmd.exe", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd := exec.Command("C:\\Windows\\system32\\cmd.exe")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+		CmdLine:    fmt.Sprintf(`/s /c "%s"`, command),
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return cmd.Start()
 }
 
