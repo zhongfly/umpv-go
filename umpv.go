@@ -256,6 +256,14 @@ func main() {
 
 	var socketPath string
 	if ipcServer != "" {
+		ipcServer = strings.ToLower(ipcServer)
+		if !strings.HasPrefix(ipcServer, `\\.\pipe\`) {
+			if strings.Contains(ipcServer, `\`) {
+				fmt.Fprintf(os.Stderr, "IPC server socket path is not vaild: %v\n", ipcServer)
+				os.Exit(1)
+			}
+			ipcServer = `\\.\pipe\` + ipcServer
+		}
 		socketPath = ipcServer
 	} else {
 		socketPath = `\\.\pipe\umpv`
