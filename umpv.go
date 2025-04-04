@@ -1,5 +1,7 @@
 package main
 
+//go:generate go-winres make --arch=amd64,386,arm64 --file-version=git-tag --product-version=git-tag
+
 import (
 	"encoding/json"
 	"flag"

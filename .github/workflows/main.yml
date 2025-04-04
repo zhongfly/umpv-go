@@ -34,6 +34,8 @@ jobs:
     - name: Build the application
       shell: bash
       run: |
+        go install github.com/tc-hib/go-winres@latest
+        go generate
         GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} go build -ldflags="-s -w -H windowsgui" -o bin/umpv
 
     - name: Compress with UPX
