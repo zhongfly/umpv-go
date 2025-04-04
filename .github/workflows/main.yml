@@ -39,7 +39,7 @@ jobs:
         GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} go build -ldflags="-s -w -H windowsgui" -o bin/umpv
 
     - name: Compress with UPX
-      run: upx --best --lzma -o umpv${{ matrix.ext }} bin/umpv
+      run: upx --best --lzma -o umpv${{ matrix.ext }} bin/umpv || mv bin/umpv umpv${{ matrix.ext }}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
