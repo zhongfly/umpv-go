@@ -89,6 +89,9 @@ func sendFilesToMPV(conn net.Conn, files []string, loadFileFlag string) error {
 		f = strings.ReplaceAll(f, "\"", "\\\"")
 		f = strings.ReplaceAll(f, "\n", "\\n")
 		cmd := fmt.Sprintf("raw loadfile \"%s\" %s\n", f, loadFileFlag)
+		if loadFileFlag == "replace" {
+			loadFileFlag = "append"
+		}
 
 		_, err := io.WriteString(conn, cmd)
 		if err != nil {
