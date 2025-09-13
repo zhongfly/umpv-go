@@ -35,7 +35,7 @@ const (
 // isURL 检查给定的文件名是否是URL
 func isURL(filename string) bool {
 	index := strings.Index(filename, "://")
-	if index == -1 || index == 0 {
+	if index == -1 {
 		return false
 	}
 	// 协议前缀只允许包含字母、数字和下划线
