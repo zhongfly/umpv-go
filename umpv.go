@@ -19,14 +19,27 @@ import (
 	"github.com/go-ini/ini"
 )
 
+// 常量定义
+const (
+	DefaultSocketPath   = `\\.\pipe\umpv`
+	DefaultLoadFileFlag = "append-play"
+	DefaultConfigFile   = "umpv.conf"
+	MPVExecutable       = "mpv.exe"
+	PipePrefix          = `\\.\pipe\`
+
+	// Windows API 常量
+	SW_RESTORE = 9
+	BufferSize = 4096
+)
+
 // isURL 检查给定的文件名是否是URL
 func isURL(filename string) bool {
-	parts := strings.SplitN(filename, "://", 2)
-	if len(parts) < 2 {
+	index := strings.Index(filename, "://")
+	if index == -1 || index == 0 {
 		return false
 	}
 	// 协议前缀只允许包含字母、数字和下划线
-	prefix := parts[0]
+	prefix := filename[:index]
 	for _, c := range prefix {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
 			return false
@@ -36,7 +49,7 @@ func isURL(filename string) bool {
 }
 
 func addQuotesToStrings(inputs []string) []string {
-	var result []string
+	result := make([]string, 0, len(inputs))
 	for _, str := range inputs {
 		str = "\"" + strings.Trim(str, "\"'") + "\""
 		result = append(result, str)
@@ -46,7 +59,7 @@ func addQuotesToStrings(inputs []string) []string {
 
 // startMPV 启动新的MPV进程
 func startMPV(files []string, socketPath string) error {
-	mpv := "mpv.exe"
+	mpv := MPVExecutable
 
 	// 检查当前目录中是否存在mpv
 	if _, err := os.Stat(mpv); err == nil {
@@ -61,33 +74,41 @@ func startMPV(files []string, socketPath string) error {
 		mpv = envMPV
 	}
 
-	args := []string{
-		"\"" + mpv + "\"",
-		"--input-ipc-server=" + socketPath,
-		"--force-window=yes",
-		"--idle=yes",
-		"--",
+	var cmdBuilder strings.Builder
+	cmdBuilder.WriteString("\"")
+	cmdBuilder.WriteString(mpv)
+	cmdBuilder.WriteString("\" --input-ipc-server=")
+	cmdBuilder.WriteString(socketPath)
+	cmdBuilder.WriteString(" --force-window=yes --idle=yes --")
+
+	quotedFiles := addQuotesToStrings(files)
+	for _, file := range quotedFiles {
+		cmdBuilder.WriteString(" ")
+		cmdBuilder.WriteString(file)
 	}
-	args = append(args, addQuotesToStrings(files)...)
-	command := strings.Join(args[:], " ")
 
 	cmd := exec.Command("C:\\Windows\\system32\\cmd.exe")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow: true,
-		CmdLine:    fmt.Sprintf(`/s /c "%s"`, command),
+		CmdLine:    fmt.Sprintf(`/s /c "%s"`, cmdBuilder.String()),
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Start()
 }
 
+// 创建用于转义特殊字符的替换器
+var escapeReplacer = strings.NewReplacer(
+	"\\", "\\\\",
+	"\"", "\\\"",
+	"\n", "\\n",
+)
+
 // sendFilesToMPV 发送文件列表到MPV
 func sendFilesToMPV(conn net.Conn, files []string, loadFileFlag string) error {
 	for _, f := range files {
 		// 转义特殊字符
-		f = strings.ReplaceAll(f, "\\", "\\\\")
-		f = strings.ReplaceAll(f, "\"", "\\\"")
-		f = strings.ReplaceAll(f, "\n", "\\n")
+		f = escapeReplacer.Replace(f)
 		cmd := fmt.Sprintf("raw loadfile \"%s\" %s\n", f, loadFileFlag)
 		if loadFileFlag == "replace" {
 			loadFileFlag = "append"
@@ -116,7 +137,7 @@ func getPid(conn net.Conn) (int, error) {
 		return 0, err
 	}
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, BufferSize)
 	n, err := conn.Read(buf)
 	if err != nil {
 		return 0, err
@@ -165,7 +186,6 @@ func setForegroundWindow(pid int) error {
 		return fmt.Errorf("window not found for PID %d", pid)
 	}
 
-	const SW_RESTORE = 9
 	procShowWindow.Call(hwnd, SW_RESTORE)
 	procSetForegroundWindow.Call(hwnd)
 
@@ -186,6 +206,50 @@ func loadConfig(configPath string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// processSocketPath 处理并验证socket路径
+func processSocketPath(ipcServer string) (string, error) {
+	if ipcServer == "" {
+		return DefaultSocketPath, nil
+	}
+
+	ipcServer = strings.ToLower(ipcServer)
+	if !strings.HasPrefix(ipcServer, PipePrefix) {
+		if strings.Contains(ipcServer, `\`) {
+			return "", fmt.Errorf("IPC server socket path is not valid: %v", ipcServer)
+		}
+		ipcServer = PipePrefix + ipcServer
+	}
+	return ipcServer, nil
+}
+func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (string, string, error) {
+	// 如果没有指定配置文件路径，则使用默认路径
+	if configPath == "" {
+		configPath = filepath.Join(executableDir, DefaultConfigFile)
+	}
+
+	cfg, err := loadConfig(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return "", "", fmt.Errorf("error loading config file: %v", err)
+	}
+
+	// 命令行参数覆盖配置文件
+	finalIpcServer := ipcServer
+	if finalIpcServer == "" && cfg != nil {
+		finalIpcServer = cfg.IpcServer
+	}
+
+	finalLoadFileFlag := loadFileFlag
+	if finalLoadFileFlag == "" {
+		if cfg != nil && cfg.LoadFileFlag != "" {
+			finalLoadFileFlag = cfg.LoadFileFlag
+		} else {
+			finalLoadFileFlag = DefaultLoadFileFlag
+		}
+	}
+
+	return finalIpcServer, finalLoadFileFlag, nil
 }
 
 func main() {
@@ -222,7 +286,7 @@ func main() {
 	}
 
 	// 处理文件路径
-	var files []string
+	files := make([]string, 0, len(flag.Args()))
 	for _, f := range flag.Args() {
 		if isURL(f) {
 			files = append(files, f)
@@ -236,42 +300,18 @@ func main() {
 		}
 	}
 
-	// 如果没有指定配置文件路径，则使用默认路径
-	if configPath == "" {
-		configPath = filepath.Join(executableDir, "umpv.conf")
-	}
-
-	cfg, err := loadConfig(configPath)
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "Error loading config file: %v\n", err)
+	// 解析配置
+	finalIpcServer, finalLoadFileFlag, err := resolveConfig(executableDir, ipcServer, loadFileFlag, configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
-	// 命令行参数覆盖配置文件
-	if ipcServer == "" && cfg != nil {
-		ipcServer = cfg.IpcServer
-	}
-	if loadFileFlag == "" {
-		if cfg != nil && cfg.LoadFileFlag != "" {
-			loadFileFlag = cfg.LoadFileFlag
-		} else {
-			loadFileFlag = "append-play"
-		}
-	}
-
-	var socketPath string
-	if ipcServer != "" {
-		ipcServer = strings.ToLower(ipcServer)
-		if !strings.HasPrefix(ipcServer, `\\.\pipe\`) {
-			if strings.Contains(ipcServer, `\`) {
-				fmt.Fprintf(os.Stderr, "IPC server socket path is not vaild: %v\n", ipcServer)
-				os.Exit(1)
-			}
-			ipcServer = `\\.\pipe\` + ipcServer
-		}
-		socketPath = ipcServer
-	} else {
-		socketPath = `\\.\pipe\umpv`
+	// 处理socket路径
+	socketPath, err := processSocketPath(finalIpcServer)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
 	}
 
 	// Windows 使用命名管道
@@ -291,7 +331,7 @@ func main() {
 	}
 	defer conn.Close()
 
-	err = sendFilesToMPV(conn, files, loadFileFlag)
+	err = sendFilesToMPV(conn, files, finalLoadFileFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error sending files to mpv: %v\n", err)
 		os.Exit(1)
@@ -307,5 +347,4 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
 		os.Exit(1)
 	}
-
 }
