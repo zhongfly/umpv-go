@@ -31,7 +31,7 @@ Specify the config file path. If not provided, the default path `umpv.conf` in t
 
 ### Example
 ```sh
-umpv --ipc-server=\\.\\pipe\\mpvpipe --loadfile-flag=replace video.mkv
+umpv --ipc-server=\\.\pipe\mpvpipe --loadfile-flag=replace video.mkv
 ```
 
 ## Config
@@ -43,6 +43,6 @@ Note: Command line arguments will override the corresponding settings in the con
 
 ### Example
 ```ini
-ipc-server=\\.\\pipe\\mpvpipe
+ipc-server=\\.\pipe\mpvpipe
 loadfile-flag=replace
 ```
