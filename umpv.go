@@ -349,13 +349,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	pid, err := getPid(conn)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting PID: %v\n", err)
-		os.Exit(1)
-	}
-	
 	if finalForeground {
+		pid, err := getPid(conn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting PID: %v\n", err)
+			os.Exit(1)
+		}
+		
 		err = setForegroundWindow(pid)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
