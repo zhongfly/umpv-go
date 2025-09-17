@@ -23,6 +23,7 @@ import (
 const (
 	DefaultSocketPath   = `\\.\pipe\umpv`
 	DefaultLoadFileFlag = "append-play"
+	DefaultForeground   = true
 	DefaultConfigFile   = "umpv.conf"
 	MPVExecutable       = "mpv.exe"
 	PipePrefix          = `\\.\pipe\`
@@ -196,6 +197,7 @@ func setForegroundWindow(pid int) error {
 type Config struct {
 	IpcServer    string `ini:"ipc-server"`
 	LoadFileFlag string `ini:"loadfile-flag"`
+	Foreground   *bool  `ini:"foreground"`
 }
 
 // loadConfig 读取配置文件
@@ -223,7 +225,7 @@ func processSocketPath(ipcServer string) (string, error) {
 	}
 	return ipcServer, nil
 }
-func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (string, string, error) {
+func resolveConfig(executableDir, ipcServer, loadFileFlag string, foreground *bool, configPath string) (string, string, bool, error) {
 	// 如果没有指定配置文件路径，则使用默认路径
 	if configPath == "" {
 		configPath = filepath.Join(executableDir, DefaultConfigFile)
@@ -231,7 +233,7 @@ func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (s
 
 	cfg, err := loadConfig(configPath)
 	if err != nil && !os.IsNotExist(err) {
-		return "", "", fmt.Errorf("error loading config file: %v", err)
+		return "", "", false, fmt.Errorf("error loading config file: %v", err)
 	}
 
 	// 命令行参数覆盖配置文件
@@ -249,7 +251,14 @@ func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (s
 		}
 	}
 
-	return finalIpcServer, finalLoadFileFlag, nil
+	finalForeground := DefaultForeground
+	if foreground != nil {
+		finalForeground = *foreground
+	} else if cfg != nil && cfg.Foreground != nil {
+		finalForeground = *cfg.Foreground
+	}
+
+	return finalIpcServer, finalLoadFileFlag, finalForeground, nil
 }
 
 func main() {
@@ -263,6 +272,9 @@ func main() {
 	flag.StringVar(&ipcServer, "ipc-server", "", "Specify the IPC server socket path")
 	flag.StringVar(&loadFileFlag, "loadfile-flag", "", "Specify the loadfile flag (replace, append, append-play)")
 	flag.StringVar(&configPath, "config", "", "Specify the config file path")
+	
+	// 添加前置窗口选项
+	foreground := flag.Bool("foreground", true, "Bring mpv window to foreground after loading files")
 
 	// 添加对 --help 参数的处理
 	help := flag.Bool("help", false, "Show help message")
@@ -300,8 +312,8 @@ func main() {
 		}
 	}
 
-	// 解析配置
-	finalIpcServer, finalLoadFileFlag, err := resolveConfig(executableDir, ipcServer, loadFileFlag, configPath)
+	// 解析配置  
+	finalIpcServer, finalLoadFileFlag, finalForeground, err := resolveConfig(executableDir, ipcServer, loadFileFlag, foreground, configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -342,9 +354,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error getting PID: %v\n", err)
 		os.Exit(1)
 	}
-	err = setForegroundWindow(pid)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
-		os.Exit(1)
+	
+	if finalForeground {
+		err = setForegroundWindow(pid)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
