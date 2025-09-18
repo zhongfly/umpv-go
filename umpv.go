@@ -313,7 +313,15 @@ func main() {
 	}
 
 	// 解析配置  
-	finalIpcServer, finalLoadFileFlag, finalForeground, err := resolveConfig(executableDir, ipcServer, loadFileFlag, foreground, configPath)
+	// 只有用户明确设置了 --foreground 时才传递指针，否则传递 nil 让配置文件或默认值生效
+	var foregroundPtr *bool
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "foreground" {
+			foregroundPtr = foreground
+		}
+	})
+	
+	finalIpcServer, finalLoadFileFlag, finalForeground, err := resolveConfig(executableDir, ipcServer, loadFileFlag, foregroundPtr, configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
