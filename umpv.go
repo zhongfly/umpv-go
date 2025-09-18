@@ -23,6 +23,7 @@ import (
 const (
 	DefaultSocketPath   = `\\.\pipe\umpv`
 	DefaultLoadFileFlag = "append-play"
+	DefaultForeground   = true
 	DefaultConfigFile   = "umpv.conf"
 	MPVExecutable       = "mpv.exe"
 	PipePrefix          = `\\.\pipe\`
@@ -58,7 +59,7 @@ func addQuotesToStrings(inputs []string) []string {
 }
 
 // startMPV 启动新的MPV进程
-func startMPV(files []string, socketPath string) error {
+func startMPV(files []string, socketPath string, foreground bool) error {
 	mpv := MPVExecutable
 
 	// 检查当前目录中是否存在mpv
@@ -79,7 +80,14 @@ func startMPV(files []string, socketPath string) error {
 	cmdBuilder.WriteString(mpv)
 	cmdBuilder.WriteString("\" --input-ipc-server=")
 	cmdBuilder.WriteString(socketPath)
-	cmdBuilder.WriteString(" --force-window=yes --idle=yes --")
+	cmdBuilder.WriteString(" --force-window=yes --idle=yes")
+	
+	// 当foreground=false时，添加--window-minimized=yes参数防止抢占焦点
+	if !foreground {
+		cmdBuilder.WriteString(" --window-minimized=yes")
+	}
+	
+	cmdBuilder.WriteString(" --")
 
 	quotedFiles := addQuotesToStrings(files)
 	for _, file := range quotedFiles {
@@ -196,6 +204,7 @@ func setForegroundWindow(pid int) error {
 type Config struct {
 	IpcServer    string `ini:"ipc-server"`
 	LoadFileFlag string `ini:"loadfile-flag"`
+	Foreground   *bool  `ini:"foreground"`
 }
 
 // loadConfig 读取配置文件
@@ -223,7 +232,7 @@ func processSocketPath(ipcServer string) (string, error) {
 	}
 	return ipcServer, nil
 }
-func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (string, string, error) {
+func resolveConfig(executableDir, ipcServer, loadFileFlag string, foreground *bool, configPath string) (string, string, bool, error) {
 	// 如果没有指定配置文件路径，则使用默认路径
 	if configPath == "" {
 		configPath = filepath.Join(executableDir, DefaultConfigFile)
@@ -231,7 +240,7 @@ func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (s
 
 	cfg, err := loadConfig(configPath)
 	if err != nil && !os.IsNotExist(err) {
-		return "", "", fmt.Errorf("error loading config file: %v", err)
+		return "", "", false, fmt.Errorf("error loading config file: %v", err)
 	}
 
 	// 命令行参数覆盖配置文件
@@ -249,7 +258,14 @@ func resolveConfig(executableDir, ipcServer, loadFileFlag, configPath string) (s
 		}
 	}
 
-	return finalIpcServer, finalLoadFileFlag, nil
+	finalForeground := DefaultForeground
+	if foreground != nil {
+		finalForeground = *foreground
+	} else if cfg != nil && cfg.Foreground != nil {
+		finalForeground = *cfg.Foreground
+	}
+
+	return finalIpcServer, finalLoadFileFlag, finalForeground, nil
 }
 
 func main() {
@@ -263,6 +279,9 @@ func main() {
 	flag.StringVar(&ipcServer, "ipc-server", "", "Specify the IPC server socket path")
 	flag.StringVar(&loadFileFlag, "loadfile-flag", "", "Specify the loadfile flag (replace, append, append-play)")
 	flag.StringVar(&configPath, "config", "", "Specify the config file path")
+	
+	// 添加前置窗口选项
+	foreground := flag.Bool("foreground", true, "Bring mpv window to foreground after loading files")
 
 	// 添加对 --help 参数的处理
 	help := flag.Bool("help", false, "Show help message")
@@ -300,8 +319,16 @@ func main() {
 		}
 	}
 
-	// 解析配置
-	finalIpcServer, finalLoadFileFlag, err := resolveConfig(executableDir, ipcServer, loadFileFlag, configPath)
+	// 解析配置  
+	// 只有用户明确设置了 --foreground 时才传递指针，否则传递 nil 让配置文件或默认值生效
+	var foregroundPtr *bool
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "foreground" {
+			foregroundPtr = foreground
+		}
+	})
+	
+	finalIpcServer, finalLoadFileFlag, finalForeground, err := resolveConfig(executableDir, ipcServer, loadFileFlag, foregroundPtr, configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -319,7 +346,7 @@ func main() {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// 如果管道不存在，启动新的MPV实例
-			err = startMPV(files, socketPath)
+			err = startMPV(files, socketPath, finalForeground)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
 				os.Exit(1)
@@ -337,14 +364,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	pid, err := getPid(conn)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting PID: %v\n", err)
-		os.Exit(1)
-	}
-	err = setForegroundWindow(pid)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
-		os.Exit(1)
+	if finalForeground {
+		pid, err := getPid(conn)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting PID: %v\n", err)
+			os.Exit(1)
+		}
+		
+		err = setForegroundWindow(pid)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error setting foreground window: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

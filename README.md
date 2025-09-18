@@ -29,9 +29,14 @@ Read [mpv manual](https://mpv.io/manual/master/#command-interface-[%3Coptions%3E
 ### --config
 Specify the config file path. If not provided, the default path `umpv.conf` in the executable directory will be used.
 
+### --foreground
+Control whether to bring the mpv window to the foreground after loading files. Default is `true`.
+- `true`: (default) Bring mpv window to foreground
+- `false`: Don't bring mpv window to foreground
+
 ### Example
 ```sh
-umpv --ipc-server=\\.\pipe\mpvpipe --loadfile-flag=replace video.mkv
+umpv --ipc-server=\\.\pipe\mpvpipe --loadfile-flag=replace --foreground=false video.mkv
 ```
 
 ## Config
@@ -45,4 +50,5 @@ Note: Command line arguments will override the corresponding settings in the con
 ```ini
 ipc-server=\\.\pipe\mpvpipe
 loadfile-flag=replace
+foreground=false
 ```
