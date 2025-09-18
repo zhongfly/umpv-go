@@ -59,7 +59,7 @@ func addQuotesToStrings(inputs []string) []string {
 }
 
 // startMPV 启动新的MPV进程
-func startMPV(files []string, socketPath string) error {
+func startMPV(files []string, socketPath string, foreground bool) error {
 	mpv := MPVExecutable
 
 	// 检查当前目录中是否存在mpv
@@ -80,7 +80,14 @@ func startMPV(files []string, socketPath string) error {
 	cmdBuilder.WriteString(mpv)
 	cmdBuilder.WriteString("\" --input-ipc-server=")
 	cmdBuilder.WriteString(socketPath)
-	cmdBuilder.WriteString(" --force-window=yes --idle=yes --")
+	cmdBuilder.WriteString(" --force-window=yes --idle=yes")
+	
+	// 当foreground=false时，添加--window-minimized=yes参数防止抢占焦点
+	if !foreground {
+		cmdBuilder.WriteString(" --window-minimized=yes")
+	}
+	
+	cmdBuilder.WriteString(" --")
 
 	quotedFiles := addQuotesToStrings(files)
 	for _, file := range quotedFiles {
@@ -339,7 +346,7 @@ func main() {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// 如果管道不存在，启动新的MPV实例
-			err = startMPV(files, socketPath)
+			err = startMPV(files, socketPath, finalForeground)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error starting mpv: %v\n", err)
 				os.Exit(1)
