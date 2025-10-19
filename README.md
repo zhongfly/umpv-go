@@ -1,7 +1,7 @@
 # umpv-go
 A Go language version of umpv (https://github.com/mpv-player/mpv/blob/master/TOOLS/umpv)
 
-Only work on Windows, `rsrc.syso` is the icon resource for the Windows program.
+Only work on Windows.
 
 ## Usage
 Place `umpv.exe` in the same directory as `mpv.exe`, or define the path to mpv.exe in the environment variable `MPV`
@@ -12,7 +12,7 @@ Place `umpv.exe` in the same directory as `mpv.exe`, or define the path to mpv.e
 ### --ipc-server
 Specify the IPC server socket path. Default path is `\\.\pipe\umpv`.
 
-Format: `\\.\pipe\PipeName`,`PipeName` can include any character other than a backslash, including numbers and special characters. The entire pipe name string can be up to 256 characters long. Pipe names are not case-sensitive.
+Format: `\\.\pipe\<PipeName>`,`PipeName` can include any character other than a backslash, including numbers and special characters. The entire pipe name string can be up to 256 characters long. Pipe names are not case-sensitive.
 
 Tips: The prefix `\\.\pipe\` can be omitted, meaning `\\.\pipe\umpv` and `umpv` refer to the same pipe.
 
