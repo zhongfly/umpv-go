@@ -30,18 +30,12 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Install UPX
-      run: sudo apt-get update && sudo apt-get install -y upx-ucl
-
     - name: Build the application
       shell: bash
       run: |
         go install github.com/tc-hib/go-winres@latest
         go generate
-        GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} go build -ldflags="-s -w -H windowsgui" -o bin/umpv
-
-    - name: Compress with UPX
-      run: upx --best --lzma -o umpv${{ matrix.ext }} bin/umpv || mv bin/umpv umpv${{ matrix.ext }}
+        GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} go build -ldflags="-s -w -H windowsgui" -o umpv${{ matrix.ext }}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
